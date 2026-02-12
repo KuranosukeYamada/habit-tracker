@@ -1,0 +1,224 @@
+Cool—**multi-user + mobile-friendly** pushes you toward a real auth flow + a responsive layout from day 1. Here’s a solid, standard stack that’s still approachable.
+
+## Stack I’d use
+
+* **TypeScript + Next.js (App Router)**: one codebase for UI + API
+* **PostgreSQL**: durable, standard
+* **Prisma**: database ORM + migrations
+* **Auth.js (NextAuth)**: “normal” auth for multi-user (email/password *or* OAuth like Google)
+* **Tailwind CSS**: fast responsive UI
+* **Calendar UI**: start with `react-calendar` (simple + mobile ok); upgrade to FullCalendar later if needed
+
+This combo is very common in production and has tons of examples.
+
+---
+
+## Data model (multi-user)
+
+You want habits owned by a user, and daily checkoffs per habit.
+
+### Prisma schema (MVP)
+
+```prisma
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  habits    Habit[]
+  logs      HabitLog[]
+  createdAt DateTime @default(now())
+}
+
+model Habit {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  name        String
+  sortOrder   Int      @default(0)
+  isArchived  Boolean  @default(false)
+  // Optional: rolling period control
+  startDate   DateTime? // when habit begins
+  endDate     DateTime? // when habit ends
+  createdAt   DateTime  @default(now())
+  logs        HabitLog[]
+}
+
+model HabitLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  habitId   String
+  habit     Habit    @relation(fields: [habitId], references: [id])
+  date      DateTime // store at midnight UTC (or use a pure date type if supported)
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([habitId, date])
+  @@index([userId, date])
+}
+```
+
+**Key point:** `@@unique([habitId, date])` means one checkbox state per habit/day.
+
+---
+
+## The “30-day rolling period” behavior
+
+You have two good options:
+
+### Option A (simplest, recommended)
+
+Habits are generally “active,” and you **only display the last 30 days** in UI logic.
+
+* Calendar can still show the month, but you visually emphasize last 30 days.
+* Side pane loads/checks within a selected range.
+
+### Option B (strict 30-day definition per habit)
+
+Each habit gets `startDate`, and UI considers it active from `startDate` to `startDate + 30 days` (or uses `endDate`).
+
+* Useful if you want “habit cycles.”
+* Slightly more logic.
+
+I’d build **Option A first**, then add “habit cycles” later.
+
+---
+
+## Scoring + color intensity
+
+For each date `d` (for the logged-in user):
+
+* `activeHabits = habits where !isArchived and (startDate/endDate allow d)`
+* `completedCount = count of logs on d where completed = true`
+* `score = completedCount / activeHabitsCount` (0..1)
+
+Map score to CSS classes (no fancy libs needed):
+
+* 0 → gray
+* 0.25 → light green
+* 0.5 → medium
+* 0.75 → strong
+* 1.0 → strongest
+
+---
+
+## UI layout (mobile-first)
+
+### Mobile (default)
+
+* Calendar on top
+* “Selected Day” pane underneath (accordion-like)
+* Big tap targets for checkboxes
+
+### Desktop
+
+* Two-column layout:
+
+  * Left: calendar
+  * Right: day pane
+
+Tailwind makes this trivial:
+
+* `flex flex-col md:flex-row`
+* Calendar `md:w-2/3`
+* Side pane `md:w-1/3`
+
+---
+
+## Pages and routes (Next.js)
+
+### Pages (App Router)
+
+* `/login` (Auth.js)
+* `/app` (main screen)
+* `/app/settings` (manage habits)
+
+### API routes (server actions or route handlers)
+
+* `GET /api/habits` – list user habits
+* `POST /api/habits` – create habit
+* `PATCH /api/habits/:id` – rename/archive/reorder
+* `GET /api/logs?start=...&end=...` – logs for range
+* `POST /api/logs/toggle` – toggle completion
+
+If you’re new to web dev, I’d implement them as **route handlers** first (clear mental model), then optionally move to server actions later.
+
+---
+
+## Auth: what to choose
+
+### If you want easiest setup and good UX:
+
+* **Auth.js + Google OAuth**
+
+  * No password storage
+  * Faster to implement securely
+
+### If you need email/password:
+
+* Auth.js supports credentials, but you must:
+
+  * hash passwords (bcrypt)
+  * handle reset emails, etc.
+
+**Recommendation:** start with **Google OAuth** (and add more providers later). You can still support email/password later.
+
+---
+
+## Deployment on your DigitalOcean droplet (clean + repeatable)
+
+Use Docker Compose:
+
+* `app` container (Next.js)
+* `db` container (Postgres)
+* `caddy` container for HTTPS + reverse proxy (easier than nginx + certbot)
+
+This gives you:
+
+* automatic TLS certs
+* easy upgrades
+* stable environment
+
+---
+
+## A very concrete “do this next” checklist
+
+1. Create Next.js app (TypeScript + Tailwind)
+2. Add Prisma + Postgres locally (or use Docker)
+3. Add Auth.js (Google provider)
+4. Implement:
+
+   * habits table + CRUD (simple settings screen)
+   * logs toggle endpoint
+5. Build the `/app` UI:
+
+   * Calendar
+   * Day pane checklist
+   * Color scoring
+6. Dockerize + deploy to droplet
+
+---
+
+## Opinionated MVP feature set
+
+To keep v1 tight but satisfying:
+
+* ✅ Login (Google)
+* ✅ Habit list + add/remove/archive
+* ✅ Tap-to-check on day pane
+* ✅ Calendar heatmap coloring by completion rate
+* ✅ 30-day “focus mode” (only load/render last 30 days heavily)
+* ✅ Responsive layout
+
+Skip until v2:
+
+* streak logic
+* reminders/notifications
+* analytics charts
+* sharing habits with others
+
+---
+
+If you want, I can generate a **complete starter project structure** (Next.js + Prisma + Auth.js + basic UI components + Docker Compose) that you can paste into a repo and run. Tell me one thing:
+
+**Do you want Google-only login for MVP, or email/password too?**
