@@ -1,7 +1,4 @@
-Cool—**multi-user + mobile-friendly** pushes you toward a real auth flow + a responsive layout from day 1. Here’s a solid, standard stack that’s still approachable.
-
-## Stack I’d use
-
+## Stack Overview
 * **TypeScript + Next.js (App Router)**: one codebase for UI + API
 * **PostgreSQL**: durable, standard
 * **Prisma**: database ORM + migrations
